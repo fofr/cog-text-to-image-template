@@ -14,22 +14,10 @@ from weights_downloader import WeightsDownloader
 from urllib.error import URLError
 
 
-# custom_nodes helpers
-from helpers.ComfyUI_IPAdapter_plus import ComfyUI_IPAdapter_plus
-from helpers.ComfyUI_Controlnet_Aux import ComfyUI_Controlnet_Aux
-from helpers.ComfyUI_Reactor_Node import ComfyUI_Reactor_Node
-from helpers.ComfyUI_InstantID import ComfyUI_InstantID
-from helpers.ComfyUI_Impact_Pack import ComfyUI_Impact_Pack
-from helpers.ComfyUI_Segment_Anything import ComfyUI_Segment_Anything
-from helpers.ComfyUI_BRIA_AI_RMBG import ComfyUI_BRIA_AI_RMBG
-from helpers.WAS_Node_Suite import WAS_Node_Suite
-
-
 class ComfyUI:
     def __init__(self, server_address):
         self.weights_downloader = WeightsDownloader()
         self.server_address = server_address
-        ComfyUI_IPAdapter_plus.prepare()
 
     def start_server(self, output_directory, input_directory):
         self.input_directory = input_directory
@@ -51,7 +39,7 @@ class ComfyUI:
         print("Server running")
 
     def run_server(self, output_directory, input_directory):
-        command = f"python ./ComfyUI/main.py --output-directory {output_directory} --input-directory {input_directory} --disable-metadata"
+        command = f"python ./ComfyUI/main.py --output-directory {output_directory} --input-directory {input_directory} --disable-metadata --preview-method none --gpu-only"
         server_process = subprocess.Popen(command, shell=True)
         server_process.wait()
 
@@ -84,18 +72,6 @@ class ComfyUI:
         ]
 
         for node in workflow.values():
-            for handler in [
-                ComfyUI_Controlnet_Aux,
-                ComfyUI_Reactor_Node,
-                ComfyUI_IPAdapter_plus,
-                ComfyUI_InstantID,
-                ComfyUI_Impact_Pack,
-                ComfyUI_Segment_Anything,
-                ComfyUI_BRIA_AI_RMBG,
-                WAS_Node_Suite,
-            ]:
-                handler.add_weights(weights_to_download, node)
-
             if "inputs" in node:
                 for input in node["inputs"].values():
                     if isinstance(input, str):
@@ -121,10 +97,6 @@ class ComfyUI:
         return isinstance(value, str) and any(
             value.lower().endswith(ft) for ft in filetypes
         )
-
-    def handle_known_unsupported_nodes(self, workflow):
-        for node in workflow.values():
-            WAS_Node_Suite.check_for_unsupported_nodes(node)
 
     def handle_inputs(self, workflow):
         print("Checking inputs")
@@ -227,17 +199,9 @@ class ComfyUI:
                 "You need to use the API JSON version of a ComfyUI workflow. To do this go to your ComfyUI settings and turn on 'Enable Dev mode Options'. Then you can save your ComfyUI workflow via the 'Save (API Format)' button."
             )
 
-        self.handle_known_unsupported_nodes(wf)
         self.handle_inputs(wf)
         self.handle_weights(wf)
         return wf
-
-    # TODO: Find a better way of doing this
-    # Nuclear reset
-    def reset_execution_cache(self):
-        with open("examples/reset.json", "r") as file:
-            reset_workflow = json.loads(file.read())
-        self.queue_prompt(reset_workflow)
 
     def randomise_input_seed(self, input_key, inputs):
         if input_key in inputs and isinstance(inputs[input_key], (int, float)):
@@ -254,7 +218,6 @@ class ComfyUI:
 
     def run_workflow(self, workflow):
         print("Running workflow")
-        # self.reset_execution_cache()
 
         prompt_id = self.queue_prompt(workflow)
         self.wait_for_prompt_completion(workflow, prompt_id)
