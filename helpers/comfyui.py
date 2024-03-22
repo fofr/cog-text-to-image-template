@@ -1,4 +1,3 @@
-import os
 import urllib.request
 import subprocess
 import threading
@@ -7,7 +6,6 @@ import json
 import urllib
 import uuid
 import json
-import os
 import websocket
 import random
 from weights_downloader import WeightsDownloader
@@ -22,8 +20,6 @@ class ComfyUI:
     def start_server(self, output_directory, input_directory):
         self.input_directory = input_directory
         self.output_directory = output_directory
-
-        self.download_pre_start_models()
 
         server_thread = threading.Thread(
             target=self.run_server, args=(output_directory, input_directory)
@@ -52,79 +48,11 @@ class ComfyUI:
         except URLError:
             return False
 
-    def download_pre_start_models(self):
-        # Some models need to be downloaded and loaded before starting ComfyUI
-        self.weights_downloader.download_torch_checkpoints()
-
-    def handle_weights(self, workflow):
-        print("Checking weights")
-        embeddings = self.weights_downloader.get_weights_by_type("EMBEDDINGS")
-        embedding_to_fullname = {emb.split(".")[0]: emb for emb in embeddings}
-        weights_to_download = []
-        weights_filetypes = [
-            ".ckpt",
-            ".safetensors",
-            ".pt",
-            ".pth",
-            ".bin",
-            ".onnx",
-            ".torchscript",
-        ]
-
-        for node in workflow.values():
-            if "inputs" in node:
-                for input in node["inputs"].values():
-                    if isinstance(input, str):
-                        if any(key in input for key in embedding_to_fullname):
-                            weights_to_download.extend(
-                                embedding_to_fullname[key]
-                                for key in embedding_to_fullname
-                                if key in input
-                            )
-                        elif any(input.endswith(ft) for ft in weights_filetypes):
-                            weights_to_download.append(input)
-
-        weights_to_download = list(set(weights_to_download))
-
-        for weight in weights_to_download:
-            self.weights_downloader.download_weights(weight)
-            print(f"✅ {weight}")
-
-        print("====================================")
-
     def is_image_or_video_value(self, value):
         filetypes = [".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm"]
         return isinstance(value, str) and any(
             value.lower().endswith(ft) for ft in filetypes
         )
-
-    def handle_inputs(self, workflow):
-        print("Checking inputs")
-        seen_inputs = set()
-        for node in workflow.values():
-            if "inputs" in node:
-                for input_key, input_value in node["inputs"].items():
-                    if isinstance(input_value, str) and input_value not in seen_inputs:
-                        seen_inputs.add(input_value)
-                        if input_value.startswith(("http://", "https://")):
-                            filename = os.path.join(
-                                self.input_directory, os.path.basename(input_value)
-                            )
-                            if not os.path.exists(filename):
-                                print(f"Downloading {input_value} to {filename}")
-                                urllib.request.urlretrieve(input_value, filename)
-                            node["inputs"][input_key] = filename
-                            print(f"✅ {filename}")
-                        elif self.is_image_or_video_value(input_value):
-                            filename = os.path.join(
-                                self.input_directory, os.path.basename(input_value)
-                            )
-                            if not os.path.exists(filename):
-                                print(f"❌ {filename} not provided")
-                            else:
-                                print(f"✅ {filename}")
-
-        print("====================================")
 
     def connect(self):
         self.client_id = str(uuid.uuid4())
@@ -198,9 +126,6 @@ class ComfyUI:
             raise ValueError(
                 "You need to use the API JSON version of a ComfyUI workflow. To do this go to your ComfyUI settings and turn on 'Enable Dev mode Options'. Then you can save your ComfyUI workflow via the 'Save (API Format)' button."
             )
-
-        self.handle_inputs(wf)
-        self.handle_weights(wf)
         return wf
 
     def randomise_input_seed(self, input_key, inputs):

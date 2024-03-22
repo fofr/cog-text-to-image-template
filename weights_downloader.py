@@ -7,16 +7,7 @@ class WeightsDownloader:
     def __init__(self):
         pass
 
-    def download_if_not_exists(self, weight_str, url, dest):
-        if not os.path.exists(f"{dest}/{weight_str}"):
-            self.download(weight_str, url, dest)
-
     def download(self, weight_str, url, dest):
-        if "/" in weight_str:
-            subfolder = weight_str.rsplit("/", 1)[0]
-            dest = os.path.join(dest, subfolder)
-            os.makedirs(dest, exist_ok=True)
-
         print(f"⏳ Downloading {weight_str} to {dest}")
         start = time.time()
         subprocess.check_call(

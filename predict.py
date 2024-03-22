@@ -1,13 +1,17 @@
 import os
 import shutil
 import json
-
+import random
 from typing import List
 from cog import BasePredictor, Input, Path
 from helpers.comfyui import ComfyUI
 
 OUTPUT_DIR = "/tmp/outputs"
 INPUT_DIR = "/tmp/inputs"
+BASE_PATH = ""
+CHECKPOINT = "CinematicRedmond.safetensors"
+BASE_URL = "https://weights.replicate.delivery/default/comfy-ui/checkpoints"
+BASE_PATH = "ComfyUI/models/checkpoints"
 
 with open("text-to-image-api.json", "r") as file:
     WORKFLOW_JSON = file.read()
@@ -51,6 +55,9 @@ class Predictor(BasePredictor):
     def setup(self):
         self.comfyUI = ComfyUI("127.0.0.1:8188")
         self.comfyUI.start_server(OUTPUT_DIR, INPUT_DIR)
+        self.comfyUI.weights_downloader.download(
+            CHECKPOINT, f"{BASE_URL}/{CHECKPOINT}.tar", BASE_PATH
+        )
 
     def cleanup(self):
         self.comfyUI.clear_queue()
@@ -60,7 +67,25 @@ class Predictor(BasePredictor):
             os.makedirs(directory)
 
     def update_workflow(self, workflow, **kwargs):
-        pass
+        positive_prompt = workflow["6"]["inputs"]
+        positive_prompt["text"] = kwargs["prompt"]
+
+        workflow["4"]["inputs"]["ckpt_name"] = CHECKPOINT
+
+        negative_prompt = workflow["7"]["inputs"]
+        negative_prompt["text"] = kwargs["prompt"]
+
+        image_dimensions = workflow["5"]["inputs"]
+        image_dimensions["width"] = kwargs["width"]
+        image_dimensions["height"] = kwargs["height"]
+        image_dimensions["batch_size"] = kwargs["num_outputs"]
+
+        sampler = workflow["3"]["inputs"]
+        sampler["steps"] = kwargs["steps"]
+        sampler["sampler_name"] = kwargs["sampler_name"]
+        sampler["scheduler"] = kwargs["scheduler"]
+        sampler["seed"] = kwargs["seed"]
+        sampler["cfg"] = kwargs["guidance_scale"]
 
     def log_and_collect_files(self, directory, prefix=""):
         files = []
@@ -83,7 +108,7 @@ class Predictor(BasePredictor):
             description="The negative prompt to guide image generation.",
             default="ugly, disfigured, low quality, blurry, nsfw",
         ),
-        num_inference_steps: int = Input(
+        steps: int = Input(
             description="Number of diffusion steps", ge=1, le=100, default=17
         ),
         guidance_scale: float = Input(
@@ -113,12 +138,16 @@ class Predictor(BasePredictor):
         """Run a single prediction on the model"""
         self.cleanup()
 
+        if seed is None:
+            seed = random.randint(0, 2**32 - 1)
+            print(f"Random seed set to: {seed}")
+
         workflow = json.loads(WORKFLOW_JSON)
         self.update_workflow(
             workflow,
             prompt=prompt,
             negative_prompt=negative_prompt,
-            num_inference_steps=num_inference_steps,
+            steps=steps,
             guidance_scale=guidance_scale,
             seed=seed,
             width=width,
@@ -129,16 +158,12 @@ class Predictor(BasePredictor):
             disable_safety_checker=disable_safety_checker,
         )
 
-        wf = self.comfyUI.load_workflow(WORKFLOW_JSON)
-
+        wf = self.comfyUI.load_workflow(workflow)
         self.comfyUI.connect()
         self.comfyUI.run_workflow(wf)
 
         files = []
-        output_directories = [OUTPUT_DIR]
-
-        for directory in output_directories:
-            print(f"Contents of {directory}:")
-            files.extend(self.log_and_collect_files(directory))
+        print(f"Contents of {OUTPUT_DIR}:")
+        files.extend(self.log_and_collect_files(OUTPUT_DIR))
 
         return files
